@@ -64,23 +64,6 @@ def allele_seq(path):
     return seq_dict
 
 
-def pseudo_seq_transformer(seq_dict, global_args):
-    [blosum_matrix, aa, main_dir, output_path] = global_args
-
-    pseq_dict = {}  # pseudo sequence dictionary
-    residue_indices = [i for i in range(300)]
-
-    for allele in seq_dict.keys():
-        new_pseq = []
-        pseq = ""
-        for index in residue_indices:
-            pseq += seq_dict[allele][index]
-            new_pseq.append(
-                blosum_matrix[aa[seq_dict[allele][index]]])  # +[i for i in pp_matrix[aa[seq_dict[allele][index]]]])
-        pseq_dict[allele] = new_pseq
-    return pseq_dict
-
-
 def pseudo_seq_esm(seq_dict, global_args):
     [blosum_matrix, aa, main_dir, output_path] = global_args
     # DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -101,12 +84,6 @@ def pseudo_seq_esm(seq_dict, global_args):
             pseq += seq_dict[allele][index]
             new_pseq.append(
                 blosum_matrix[aa[seq_dict[allele][index]]])  # +[i for i in pp_matrix[aa[seq_dict[allele][index]]]])
-        #     print(collator(tokenizer(
-        #     pseq,
-        #     max_length=300,
-        #     padding="max_length",
-        #     truncation=True,
-        #     return_tensors="np"  # 确保返回numpy数组
 
         # )['input_ids']))
 
@@ -116,14 +93,14 @@ def pseudo_seq_esm(seq_dict, global_args):
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np"  
 
             )['input_ids'])['input_ids'], collator(tokenizer(
                 pseq,
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np" 
 
             )['input_ids'])['labels']]
         else:
@@ -132,58 +109,18 @@ def pseudo_seq_esm(seq_dict, global_args):
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np"  
 
             )['input_ids'])['input_ids'], collator(tokenizer(
                 pseq,
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np"  
 
             )['input_ids'])['labels']])
 
     return pseq_dict
-
-
-def read_binding_data(path, pseq_dict, global_args):
-    [blosum_matrix, aa, main_dir, output_path] = global_args
-    data_dict = {}
-    f = open(path, "r")
-
-    for line in f:
-        info = re.split("\t", line)
-
-        allele = info[1]
-        if allele in pseq_dict.keys():
-            affinity = 1 - log(float(info[5])) / log(50000)
-            pep = info[3]  # Sequence of the peptide in the form of a string, like "AAVFPPLEP"
-            pep_blosum = []  # Encoded peptide seuqence
-            for residue_index in range(12):
-                # Encode the peptide sequence in the 1-12 columns, with the N-terminal aligned to the left end
-                # If the peptide is shorter than 12 residues, the remaining positions on
-                # the rightare filled will zero-padding
-                if residue_index < len(pep):
-                    pep_blosum.append(blosum_matrix[aa[pep[residue_index]]])
-                else:
-                    pep_blosum.append(np.zeros(20))
-            for residue_index in range(12):
-                # Encode the peptide sequence in the 13-24 columns, with the C-terminal aligned to the right end
-                # If the peptide is shorter than 12 residues, the remaining positions on
-                # the left are filled will zero-padding
-                if 12 - residue_index > len(pep):
-                    pep_blosum.append(np.zeros(20))
-                else:
-                    pep_blosum.append(blosum_matrix[aa[pep[len(pep) - 12 + residue_index]]])
-            # new_data = [encoded pep sequence, encoded MHC pseudo sequence, len of pep, affinity]
-            new_data = [pep_blosum, pseq_dict[allele], affinity, len(pep), pep]
-            if allele not in data_dict.keys():
-                data_dict[allele] = [new_data]
-            else:
-                data_dict[allele].append(new_data)
-    print("Finished reading binding data")
-    return data_dict
-
 
 def read_binding_data_esm(path, pseq_dict, global_args):
     [blosum_matrix, aa, main_dir, output_path] = global_args
@@ -346,7 +283,7 @@ def read_validation_data_esm(path, pseq_dict, global_args):
                 max_length=12,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np" 
 
             )['input_ids'], pep,adj[0]]
             data.append(new_data)
@@ -355,10 +292,6 @@ def read_validation_data_esm(path, pseq_dict, global_args):
 
 
 def preparing_data(data_dict, cross_validation, n_splits, s, test_len=9):
-    # training_data = []
-    # test_dicts = []
-    # cross_validation = KFold(n_splits = n_splits)
-    # cross_validation = KFold(n_splits=n_splits)
 
     split_indices_train = []
     split_indices_test = []
@@ -383,10 +316,7 @@ def preparing_data(data_dict, cross_validation, n_splits, s, test_len=9):
             split_indices_train[split].extend([training_indices])
             split_indices_test[split].extend([test_indices])
 
-            # print(len(allele_data),len(allele_data[0]))
-            # training_data[split].extend([allele_data[i] for i in training_indices])
-            # test_dicts[split].extend([allele_data[i] for i in test_indices])
-            # print()
+
             split += 1
     print(len(split_indices_train[0]))
     # for split in range(n_splits):
@@ -394,8 +324,7 @@ def preparing_data(data_dict, cross_validation, n_splits, s, test_len=9):
     return [split_indices_train[s], split_indices_test[s]]
 
 
-seq1_len = 15  # 肽段长度
-seq2_len = 30  # MHC长度
+
 adj_size = 324
 batch_size = 32
 epochs = 200
@@ -407,10 +336,10 @@ aa = {"A": 0, "R": 1, "N": 2, "D": 3, "C": 4, "Q": 5, "E": 6, "G": 7, "H": 8, "I
 # Load the blosum matrix for encoding
 path_blosum = main_dir + r"blosum50.txt"
 blosum_matrix = read_blosum(path_blosum)
-# 创建模型
 
 
-# 模拟输入
+
+
 path_seq = main_dir + "HLA_all.txt"
 seq_dict = allele_seq(path_seq)
 print(len(seq_dict))
@@ -420,12 +349,9 @@ data_dict = read_binding_data_esm(path_train, pseq_dict, global_args)
 # print(len(data_dict))
 data_dict = redundancy_removal(data_dict)
 path_val = main_dir + "data/binding_data_val.txt"
-# 测试集
-# validation_data, validation_target = read_validation_data_esm(path_val, pseq_dict, global_args)
 
 # Data partition for cross-validation
 n_splits = 5
-# 交叉验证划分
 # training_data, test_dicts = preparing_data(data_dict, n_splits,test_len=9)
 # print ("Finished data loading")
 # print ("shape of training data", len(training_data),len(training_data[0])  )
