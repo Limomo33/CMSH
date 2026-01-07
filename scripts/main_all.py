@@ -101,14 +101,6 @@ def pseudo_seq_esm(seq_dict, global_args):
             pseq += seq_dict[allele][index]
             new_pseq.append(
                 blosum_matrix[aa[seq_dict[allele][index]]])  # +[i for i in pp_matrix[aa[seq_dict[allele][index]]]])
-        #     print(collator(tokenizer(
-        #     pseq,
-        #     max_length=300,
-        #     padding="max_length",
-        #     truncation=True,
-        #     return_tensors="np"  # 确保返回numpy数组
-
-        # )['input_ids']))
 
         if allele not in pseq_dict.keys():
             pseq_dict[allele] = [new_pseq, collator(tokenizer(
@@ -116,14 +108,14 @@ def pseudo_seq_esm(seq_dict, global_args):
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np" 
 
             )['input_ids'])['input_ids'], collator(tokenizer(
                 pseq,
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np" 
 
             )['input_ids'])['labels']]
         else:
@@ -132,58 +124,18 @@ def pseudo_seq_esm(seq_dict, global_args):
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np" 
 
             )['input_ids'])['input_ids'], collator(tokenizer(
                 pseq,
                 max_length=300,
                 padding="max_length",
                 truncation=True,
-                return_tensors="np"  # 确保返回numpy数组
+                return_tensors="np"  
 
             )['input_ids'])['labels']])
 
     return pseq_dict
-
-
-def read_binding_data(path, pseq_dict, global_args):
-    [blosum_matrix, aa, main_dir, output_path] = global_args
-    data_dict = {}
-    f = open(path, "r")
-
-    for line in f:
-        info = re.split("\t", line)
-
-        allele = info[1]
-        if allele in pseq_dict.keys():
-            affinity = 1 - log(float(info[5])) / log(50000)
-            pep = info[3]  # Sequence of the peptide in the form of a string, like "AAVFPPLEP"
-            pep_blosum = []  # Encoded peptide seuqence
-            for residue_index in range(12):
-                # Encode the peptide sequence in the 1-12 columns, with the N-terminal aligned to the left end
-                # If the peptide is shorter than 12 residues, the remaining positions on
-                # the rightare filled will zero-padding
-                if residue_index < len(pep):
-                    pep_blosum.append(blosum_matrix[aa[pep[residue_index]]])
-                else:
-                    pep_blosum.append(np.zeros(20))
-            for residue_index in range(12):
-                # Encode the peptide sequence in the 13-24 columns, with the C-terminal aligned to the right end
-                # If the peptide is shorter than 12 residues, the remaining positions on
-                # the left are filled will zero-padding
-                if 12 - residue_index > len(pep):
-                    pep_blosum.append(np.zeros(20))
-                else:
-                    pep_blosum.append(blosum_matrix[aa[pep[len(pep) - 12 + residue_index]]])
-            # new_data = [encoded pep sequence, encoded MHC pseudo sequence, len of pep, affinity]
-            new_data = [pep_blosum, pseq_dict[allele], affinity, len(pep), pep]
-            if allele not in data_dict.keys():
-                data_dict[allele] = [new_data]
-            else:
-                data_dict[allele].append(new_data)
-    print("Finished reading binding data")
-    return data_dict
-
 
 def read_binding_data_esm(path, pseq_dict, global_args):
     [blosum_matrix, aa, main_dir, output_path] = global_args
@@ -227,7 +179,7 @@ def read_binding_data_esm(path, pseq_dict, global_args):
                     max_length=12,
                     padding="max_length",
                     truncation=True,
-                    return_tensors="np"  # 确保返回numpy数组
+                    return_tensors="np" 
 
                 )['input_ids'], pep]
             if allele not in data_dict.keys():
@@ -236,31 +188,6 @@ def read_binding_data_esm(path, pseq_dict, global_args):
                 data_dict[allele].append(new_data)
     print("Finished reading binding data")
     del allele_matrices
-    return data_dict
-
-
-def redundancy_removal(data_dict):
-    '''
-    Removes the redundant data from the training set
-    '''
-    for allele in sorted(data_dict.keys()):
-        allele_data = data_dict[allele]
-        unique_9mers = []
-        nonredundant_data = []
-        overlap = 0
-        for pep_info in allele_data:
-            redundant = False
-            seq = pep_info[-1]
-            for i in range(len(seq) - 9 + 1):
-                _9mer = seq[i:i + 9]
-                if _9mer not in unique_9mers:
-                    unique_9mers.append(_9mer)
-                else:
-                    redundant = True
-            if not redundant or len(seq) == 8:
-                nonredundant_data.append(pep_info)
-        data_dict[allele] = nonredundant_data
-
     return data_dict
 
 
@@ -306,8 +233,7 @@ def read_validation_data_esm(path, pseq_dict, global_args):
                     max_length=12,
                     padding="max_length",
                     truncation=True,
-                    return_tensors="np"  # 确保返回numpy数组
-
+                    return_tensors="np"  
                 )['input_ids'], pep]
             if allele not in data_dict.keys():
                 data_dict[allele] = [new_data]
@@ -318,11 +244,6 @@ def read_validation_data_esm(path, pseq_dict, global_args):
 
 
 def preparing_data(data_dict, cross_validation, n_splits, s, test_len=9):
-    # training_data = []
-    # test_dicts = []
-    # cross_validation = KFold(n_splits = n_splits)
-    # cross_validation = KFold(n_splits=n_splits)
-
     split_indices_train = []
     split_indices_test = []
 
@@ -357,8 +278,8 @@ def preparing_data(data_dict, cross_validation, n_splits, s, test_len=9):
     return [split_indices_train[s], split_indices_test[s]]
 
 
-seq1_len = 15  # 肽段长度
-seq2_len = 30  # MHC长度
+seq1_len = 15  
+seq2_len = 30  
 adj_size = 324
 batch_size = 32
 epochs = 200
@@ -370,10 +291,6 @@ aa = {"A": 0, "R": 1, "N": 2, "D": 3, "C": 4, "Q": 5, "E": 6, "G": 7, "H": 8, "I
 # Load the blosum matrix for encoding
 path_blosum = main_dir + r"blosum50.txt"
 blosum_matrix = read_blosum(path_blosum)
-# 创建模型
-
-
-# 模拟输入
 path_seq = main_dir + "HLA_all.txt"
 seq_dict = allele_seq(path_seq)
 print(len(seq_dict))
@@ -383,13 +300,13 @@ pseq_dict = pseudo_seq_esm(seq_dict, global_args)
 # # print(len(data_dict))
 # data_dict = redundancy_removal(data_dict)
 path_val = main_dir + "data/binding_data_val.txt"
-# 测试集
+
 validation_data = read_validation_data_esm(path_val, pseq_dict, global_args)
 validation_data = redundancy_removal(validation_data)
 
 # Data partition for cross-validation
 n_splits = 5
-# 交叉验证划分
+
 # training_data, test_dicts = preparing_data(data_dict, n_splits,test_len=9)
 # print ("Finished data loading")
 # print ("shape of training data", len(training_data),len(training_data[0])  )
@@ -401,28 +318,3 @@ for allele in validation_data.keys():
     allele_data = validation_data[allele]
     cross_validation_test(allele_data, allele_data,
                           global_args)
-# for split in range(n_splits):
-#     training_data = []
-#     test_dicts = []
-#     # training_data, test_dicts = preparing_data(data_dict, cross_validation, split, test_len=9)
-#     [training_indices, test_indices] = preparing_data(data_dict, cross_validation, n_splits, split)
-#     l = 0
-#     for allele in data_dict.keys():
-#         allele_data = data_dict[allele]
-#         if len(allele_data) < 100:
-#             continue
-#         # Partition of data
-#         # print(len(allele_data),len(allele_data[0]),allele_data)
-#         # print(training_indices[l])
-#         training_data.extend([allele_data[i] for i in training_indices[l]])
-#         test_dicts.extend([allele_data[i] for i in test_indices[l]])
-#         l += 1
-#     random.shuffle(training_data)
-#     random.shuffle(test_dicts)
-#     print("Finished data loading, fold is:", split)
-#     print("shape of training data", len(test_dicts), len(test_dicts[0]))
-#
-#     cross_validation_test(training_data, test_dicts,
-#                                                              global_args)
-#     # performance_dicts.append(performance_dict)
-
