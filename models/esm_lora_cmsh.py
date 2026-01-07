@@ -30,11 +30,9 @@ class ESMModelWrapper(nn.Module):
             nn.Linear(256, 128)
         )
 
-        # 冻结ESM参数
         for param in self.esm_model.parameters():
             param.requires_grad_(False)
 
-        # 获取输出维度
         self.repr_layer = self.esm_model.num_layers
         self.embed_dim = self.esm_model.embed_dim
 
@@ -48,7 +46,6 @@ class ESMModelWrapper(nn.Module):
         # print(token_embeddings.size())
         contrast_emb = self.contrast_proj(token_embeddings.mean(1))
 
-        # 去除CLS和SEP token
         #embeddings = self._remove_special_tokens(token_embeddings, sequences)
         return token_embeddings, contrast_emb
         
@@ -57,10 +54,8 @@ class EnhancedESMModelWrapper(nn.Module):
         super().__init__()
         self.esm_model, self.alphabet = esm.pretrained.load_model_and_alphabet_hub(esm_model_name)
         
-        # 添加LoRA适配器
         self._add_lora_adapters()
         
-        # 对比学习投影头
         self.contrast_proj = nn.Sequential(
             nn.Linear(self.esm_model.embed_dim, 256),
             nn.ReLU(),
@@ -68,7 +63,6 @@ class EnhancedESMModelWrapper(nn.Module):
         )
 
     def _add_lora_adapters(self):
-        # 配置LoRA参数
         lora_config = LoraConfig( use_dora=True,
             r=8,
             lora_alpha=16,
@@ -79,7 +73,6 @@ class EnhancedESMModelWrapper(nn.Module):
         self.esm_model = get_peft_model(self.esm_model, lora_config)
 
     def forward(self, sequences):
-        # 前向传播时同时返回原始嵌入和对比嵌入
         results = self.esm_model(sequences, repr_layers=[self.esm_model.num_layers])
         #print(results)
         token_embeddings = results["representations"][self.esm_model.num_layers]
@@ -167,7 +160,6 @@ class PositionEmbeddingTrain(nn.Module):
 
 def simcse_unsup_loss(mhc_con: torch.Tensor, pep_con: torch.Tensor, temperature: float = 0.05) -> torch.Tensor:
     
-    # 1. 归一化嵌入向量
     mhc_con = F.normalize(mhc_con, dim=1)
     pep_con = F.normalize(pep_con, dim=1)
     batch_size = mhc_con.size(0)
@@ -175,11 +167,9 @@ def simcse_unsup_loss(mhc_con: torch.Tensor, pep_con: torch.Tensor, temperature:
     sim_matrix = mhc_con @ pep_con.T  # [batch_size, batch_size]
     sim_matrix /= temperature
     
-    # 计算两个方向的损失
     loss_mhc_to_peptide = F.cross_entropy(sim_matrix, labels)
     loss_peptide_to_mhc = F.cross_entropy(sim_matrix.T, labels)
     
-    # 对称损失
     loss = (loss_mhc_to_peptide + loss_peptide_to_mhc) / 2
 
     
@@ -246,16 +236,7 @@ import torch
 import torch.nn as nn
 
 class TrainableGaussianNoise(nn.Module):
-    """
-    可训练高斯噪声层
-    
-    参数:
-    - initial_std (float): 初始标准差 (默认: 0.1)
-    - per_channel (bool): 是否为每个通道使用独立噪声 (默认: False)
-    - trainable (bool): 噪声标准差是否可训练 (默认: True)
-    - always_active (bool): 在eval模式下是否保持激活 (默认: False)
-    - clamp_output (tuple): 输出值的钳制范围 (默认: None)
-    """
+
     def __init__(self, 
                  initial_std=0.1, 
                  per_channel=False,
@@ -268,68 +249,53 @@ class TrainableGaussianNoise(nn.Module):
         self.always_active = always_active
         self.clamp_output = clamp_output
         
-        # 初始化标准差参数
         if trainable:
             if per_channel:
-                # 通道级噪声：每个通道独立标准差
                 self.log_std = nn.Parameter(torch.zeros(1) + torch.log(torch.tensor(initial_std)))
             else:
-                # 全局噪声：单一标准差
                 self.log_std = nn.Parameter(torch.zeros(1) + torch.log(torch.tensor(initial_std)))
         else:
-            # 固定标准差
             self.register_buffer('log_std', torch.tensor(initial_std).log())
     
     def forward(self, x):
-        # 仅在训练模式或always_active为True时添加噪声
         if self.training or self.always_active:
-            # 计算当前标准差 (确保正值)
             std = torch.exp(self.log_std)
             
-            # 根据输入维度调整噪声形状
             if self.per_channel and x.dim() > 2:
-                # 通道级噪声：形状 [1, C, 1, ...]
                 noise_shape = [1] * x.dim()
-                noise_shape[1] = x.size(1)  # 通道维度
+                noise_shape[1] = x.size(1)  # 
                 noise = torch.randn(*noise_shape, device=x.device) * std
             else:
-                # 全局噪声：与输入相同形状
                 noise = torch.randn_like(x) * std
             
-            # 添加噪声
             x = x + noise
             
-            # 可选：钳制输出值范围
             if self.clamp_output is not None:
                 x = torch.clamp(x, *self.clamp_output)
         
         return x
     
     def current_std(self):
-        """获取当前标准差值"""
         return torch.exp(self.log_std).item()
     
     def extra_repr(self):
-        """显示层配置信息"""
         return (f"std={self.current_std():.4f}, per_channel={self.per_channel}, "
                 f"trainable={self.trainable}, always_active={self.always_active}")
 
 
-# 修改TransformerModel类
 class TransformerModel(nn.Module):
     def __init__(self, seq1_len, seq2_len, dim=340, kernel_size=9, num_heads=2, gat_heads=8, fc2_size=1):
         super().__init__()
-        # 其他初始化保持不变...
         self.pos_embed1 = PositionEmbeddingTrain(seq1_len, 20)
         self.pos_embed2 = PositionEmbeddingTrain(seq2_len, 20)
 
         self.attention1 = MultiHeadAttention(340)
         self.attention2 = MultiHeadAttention(340)
 
-        self.gat = GAT(nfeat=dim, nhid=64,n_final_out=32)  # 假设拼接后维度
-        self.linear1 = nn.Linear(2720, 256)  # 根据实际维度调整
-        self.linear2 = nn.Linear(3200, 256)  # 根据实际维度调整
-        self.linear3 = nn.Linear(10720, 256)  # 根据实际维度调整
+        self.gat = GAT(nfeat=dim, nhid=64,n_final_out=32)  #
+        self.linear1 = nn.Linear(2720, 256)  # 
+        self.linear2 = nn.Linear(3200, 256)  # 
+        self.linear3 = nn.Linear(10720, 256)  # 
         self.linear4 = nn.Linear(512, 64)#11136
         self.linear5 = nn.Linear(64, 1)
 
@@ -354,7 +320,7 @@ class TransformerModel(nn.Module):
             stride=1,
             padding='same'
         )
-        self.flatten = nn.Flatten()  # 正确使用Flatten
+        self.flatten = nn.Flatten()  # 
 
         self.pool = nn.AvgPool1d(kernel_size=1)
         self.dropout = nn.Dropout(0.5)
@@ -362,7 +328,7 @@ class TransformerModel(nn.Module):
         self.norm1=nn.LayerNorm(340, eps=1e-5, elementwise_affine=True)
         self.norm2=nn.LayerNorm(1, eps=1e-5, elementwise_affine=True)
 
-        # 替换原有的ESM编码器
+        # 
         self.esm_encoder = EnhancedESMModelWrapper()
         self.esm_encoder2 = ESMModelWrapper()
         self.fixed_noise = TrainableGaussianNoise(
@@ -371,22 +337,21 @@ class TransformerModel(nn.Module):
     always_active=True,
     clamp_output=(-3, 3))
 
-        # 新增对比学习相关参数
+        # 
         self.contrast_loss = nn.L1Loss(reduction='mean')
         # self.contrast_loss=nn.CrossEntropyLoss()
-        self.contrast_weight =0.3  # 对比损失权重
+        self.contrast_weight =0.3  # 
 
         self.com_loss= nn.CrossEntropyLoss(ignore_index=-100)
 
     def forward(self, pep, mhc, adj, mhc_seq, pep_seq):
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        # 获取ESM嵌入和对比嵌入
+        # 
         pep_embeddings, pep_contrast = self.esm_encoder2(pep_seq)
         mhc_embeddings, mhc_contrast,l = self.esm_encoder(mhc_seq)
         
-        # 其他处理保持不变...
-        pep_embeddings = torch.cat([pep_embeddings, pep_embeddings],dim=1)  # 填充到12
-        # mhc_embeddings = self._pad_sequences(mhc_embeddings, target_len=300)  # 填充到30
+        pep_embeddings = torch.cat([pep_embeddings, pep_embeddings],dim=1)  # 
+        # mhc_embeddings = self._pad_sequences(mhc_embeddings, target_len=300)  # 
         pepesm = self.pos_embed1(pep_embeddings)
         mhcesm = self.pos_embed2(mhc_embeddings)
         pepesm=self.fixed_noise(pepesm)     
@@ -441,10 +406,9 @@ class TransformerModel(nn.Module):
         out=F.leaky_relu(out, negative_slope=0.002)
         return out, pep_attn.mean(1), mhc_att.mean(1),l
 
-# 修改训练循环
+# 
 def cross_validation_training_transformer_gat(training_data, test_dict, validation_data, validation_target,global_args):
 
-    # ... 其他部分保持不变 ...
     [blosum_matrix, aa, main_dir, output_path] = global_args
     training_pep, training_mhc, training_target = [[i[j] for i in training_data] for j in range(3)]
     training_mhc_seq, training_mhc_l,training_pep_seq=[[i[j] for i in training_data] for j in range(4,7)]
@@ -453,7 +417,6 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
     #print(training_mhc_seq)
     #validation_pep, validation_mhc = [i[0] for i in validation_data], [i[1] for i in validation_data]
 
-    # 转换为PyTorch Tensor
     training_pep = torch.FloatTensor(np.array(training_pep))
     training_mhc = torch.FloatTensor(np.array(training_mhc))
     training_target = torch.FloatTensor(np.array(training_target))
@@ -470,8 +433,7 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
     validation_mhc_l = torch.LongTensor(np.array(validation_mhc_l))
 
     # print(training_mhc_l.size(),validation_mhc_l.size(),validation_target.size())
-    # 创建邻接矩阵
-    aa = creat_adj()  # 假设已实现
+    aa = creat_adj()  # 
     aa = np.expand_dims(aa, axis=0).astype(np.float32)
     A = np.tile(aa, (len(training_mhc), 1, 1))
     val_A=np.tile(aa, (len(validation_mhc), 1, 1))
@@ -479,12 +441,11 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
     val_A= torch.FloatTensor(val_A)
 
 
-    # 超参数
     fc2_size = 1
     models = []
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     num_epochs=150
-    # 训练循环
+    # 
 
     model = TransformerModel(
         seq1_len=training_pep.shape[1],
@@ -508,13 +469,13 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
         for epoch in range(num_epochs):
             print("Begin, epoch:", epoch)
             model.train()
-            # 创建DataLoader
+            # 
             dataset = TensorDataset(training_pep, training_mhc, A, training_target,training_mhc_seq,training_pep_seq,training_mhc_l)
             loader = DataLoader(dataset, batch_size=256, shuffle=True)
             total_loss = 0
             t_loss=0
 
-            # 修改训练步骤
+            # 
             for batch_pep, batch_mhc, batch_adj, batch_target, batch_mhc_seq, batch_pep_seq,batch_mhc_l in tqdm(loader,desc=f'epoch{epoch+1}/{num_epochs}'):
                 batch_pep = batch_pep.to(device)
                 batch_mhc = batch_mhc.to(device)
@@ -524,40 +485,37 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
 
                 batch_mhc_seq = batch_mhc_seq.to(device)
                 batch_pep_seq = batch_pep_seq.to(device)
-                # ... 前向传播 ...
                 # print(batch_mhc_seq.size(),batch_pep_seq.size())
                 optimizer.zero_grad()
 
                 outputs, pep_contrast, mhc_contrast,l = model(batch_pep, batch_mhc, batch_adj,batch_mhc_seq,batch_pep_seq)
-                
-                # 计算对比损失
+
+                # 
                 shuffle_idx = torch.randperm(pep_contrast.size(0))
                 neg_contrast = pep_contrast[shuffle_idx]
                 cont_loss = model.contrast_loss(
                     pep_contrast, 
-                    mhc_contrast  # 正样本对
-                    # neg_contrast    # 负样本
+                    mhc_contrast  # 
+                    # neg_contrast    # 
                 )
                 # cont_loss=simcse_unsup_loss(pep_contrast,mhc_contrast)
                 # mlm_loss = compute_loss(mhc_l, batch_mhc_l)
-                # 组合损失
+                # 
                 total_loss = criterion(outputs.squeeze(), batch_target) +model.contrast_weight * cont_loss+0.1*model.com_loss(l.view(-1, l.size(-1)), batch_mhc_l.view(-1))
                 t_loss += total_loss.item()
   
-                # ... 反向传播 ...
                 total_loss.backward()
                 optimizer.step()
           
-                # ... 其他计算 ...
 
             train_loss=t_loss/len(loader)
-  # 修改验证步骤
+  # 
             print(train_loss)
             
             with torch.no_grad():
                 v_loss =0
 
-                # 验证
+                # 
                 model.eval()
                 valdataset = TensorDataset(validation_pep, validation_mhc, val_A, validation_target, validation_mhc_seq,validation_pep_seq,validation_mhc_l)
                 val_loader = DataLoader(valdataset, batch_size=256, shuffle=True)
@@ -578,12 +536,12 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
                     # neg_contrast = pep_contrast[shuffle_idx]
                     # cont_loss = model.contrast_loss(
                     #     pep_contrast, 
-                    #     mhc_contrast,  # 正样本对
-                    #     neg_contrast    # 负样本
+                    #     mhc_contrast,  # 
+                    #     neg_contrast    # 
                     # )
                     # mlm_loss = compute_loss(mhc_l, batch_mhc_l)
    
-                    # 组合损失
+                    # 
                     total_loss = criterion(outputs.squeeze(), batch_vtarget)              
                     pcc, roc_auc, max_acc = model_eval(outputs.squeeze(), batch_vtarget)
                     #loss.backward()
@@ -623,7 +581,7 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
             # plt.xticks(range(1, num_epochs + 1))
             # plt.legend()
     
-            plt.savefig('loss_gsm_esm.png')  # 保存图片 fig.savefig('xx.png') 功能相同
+            plt.savefig('loss_gsm_esm.png')  #
   # if poor_init:
   #               continue
   #           if val_pcc > 0.8:
@@ -631,30 +589,24 @@ def cross_validation_training_transformer_gat(training_data, test_dict, validati
   #               models.append(model)
 
     print("Training complete.")
-    # 模型评估
     #performance_dict = model_performance(models, validation_data, validation_target, aa, global_args)
 
     return models
-# 辅助函数需要重新实现
 def model_eval(predictions, targets, threshold=0.5):
     #from torchmetrics import PearsonCorrCoef
 
-    # 确保输入为numpy数组
     # if isinstance(predictions, torch.Tensor):
     pred_np = predictions.cpu().detach().numpy()
     target_np = targets.cpu().detach().numpy()
     print(pred_np)
-    # 转换为分类标签（假设任务可以转换为二分类）
     # bin_targets = (targets > threshold).astype(int)
     # bin_preds = (predictions > threshold).astype(int)
     #
-    # # 计算皮尔逊相关系数
     # try:
     pcc,_ = pearsonr(pred_np, target_np)
     # except:
     #     pcc = 0.0
 
-    # 计算ROC AUC（需要概率值）
     #try:
     test_label = [1 if aff > 1 - log(500) / log(50000) else 0 for aff in target_np]
     fpr, tpr, thresholds = roc_curve(test_label, pred_np)
@@ -662,7 +614,6 @@ def model_eval(predictions, targets, threshold=0.5):
     # except:
     #     roc_auc = 0.5
 
-    # 计算最大准确率（动态阈值）
     threshold = 1 - log(500) / log(50000)
     p = [0 if score < threshold else 1 for score in pred_np]
     accurate = [1 if p[i] == test_label[i] else 0 for i in range(len(p))]
@@ -684,7 +635,7 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
     test_mhc = torch.FloatTensor(np.array(test_mhc))
     test_target = torch.FloatTensor(np.array(validation_target)).unsqueeze(1)
 
-    # 创建邻接矩阵
+    # 
     aa_tensor = torch.FloatTensor(np.tile(aa, (len(test_pep), 1, 1)))
 
     performance_dict = {}
@@ -693,16 +644,15 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
     for i, model in enumerate(models):
         model.eval()
         with torch.no_grad():
-            # 预测测试集
+            # 
             inputs = (test_pep.to(device),
                       test_mhc.to(device),
                       aa_tensor.to(device))
             outputs = model(*inputs)
 
-            # 计算指标
             pcc, roc_auc, max_acc = model_eval(outputs, test_target)
 
-            # 记录结果
+            # 
             performance_dict[f"model_{i + 1}"] = {
                 "PCC": pcc,
                 "AUC": roc_auc,
@@ -711,33 +661,29 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
                 "Targets": test_target.tolist()
             }
 
-            # 输出结果
             print(f"Model {i + 1} Performance:")
             print(f"PCC: {pcc:.4f}")
             print(f"ROC AUC: {roc_auc:.4f}")
             print(f"Max Accuracy: {max_acc:.4f}")
             print("-" * 40)
 
-    return performance_dict# 辅助函数需要重新实现
+    return performance_dict# 
 def model_eval(predictions, targets, threshold=0.5):
     #from torchmetrics import PearsonCorrCoef
 
-    # 确保输入为numpy数组
     # if isinstance(predictions, torch.Tensor):
     pred_np = predictions.cpu().detach().numpy()
     target_np = targets.cpu().detach().numpy()
 
-    # 转换为分类标签（假设任务可以转换为二分类）
     # bin_targets = (targets > threshold).astype(int)
     # bin_preds = (predictions > threshold).astype(int)
     #
-    # # 计算皮尔逊相关系数
+    # # 
     # try:
     pcc,_ = pearsonr(pred_np, target_np)
     # except:
     #     pcc = 0.0
 
-    # 计算ROC AUC（需要概率值）
     #try:
     test_label = [1 if aff > 1 - log(500) / log(50000) else 0 for aff in target_np]
     fpr, tpr, thresholds = roc_curve(test_label, pred_np)
@@ -745,7 +691,6 @@ def model_eval(predictions, targets, threshold=0.5):
     # except:
     #     roc_auc = 0.5
 
-    # 计算最大准确率（动态阈值）
     threshold = 1 - log(500) / log(50000)
     p = [0 if score < threshold else 1 for score in pred_np]
     accurate = [1 if p[i] == test_label[i] else 0 for i in range(len(p))]
@@ -767,7 +712,7 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
     test_mhc = torch.FloatTensor(np.array(test_mhc))
     test_target = torch.FloatTensor(np.array(validation_target)).unsqueeze(1)
 
-    # 创建邻接矩阵
+    # 
     aa_tensor = torch.FloatTensor(np.tile(aa, (len(test_pep), 1, 1)))
 
     performance_dict = {}
@@ -776,16 +721,16 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
     for i, model in enumerate(models):
         model.eval()
         with torch.no_grad():
-            # 预测测试集
+            # 
             inputs = (test_pep.to(device),
                       test_mhc.to(device),
                       aa_tensor.to(device))
             outputs = model(*inputs)
 
-            # 计算指标
+            # 
             pcc, roc_auc, max_acc = model_eval(outputs, test_target)
 
-            # 记录结果
+            # 
             performance_dict[f"model_{i + 1}"] = {
                 "PCC": pcc,
                 "AUC": roc_auc,
@@ -794,7 +739,7 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
                 "Targets": test_target.tolist()
             }
 
-            # 输出结果
+            # 
             print(f"Model {i + 1} Performance:")
             print(f"PCC: {pcc:.4f}")
             print(f"ROC AUC: {roc_auc:.4f}")
@@ -802,7 +747,6 @@ def model_performance(models, validation_data, validation_target, aa, global_arg
             print("-" * 40)
 
     return performance_dict
-        # 在模型评估中增加对比学习可视化
     def visualize_contrast(contrast_emb, labels, epoch):
         plt.figure(figsize=(10,8))
         plt.scatter(contrast_emb[:,0], contrast_emb[:,1], c=labels)
