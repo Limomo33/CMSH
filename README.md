@@ -4,13 +4,18 @@ python pytorch
 
 CMHS is a deep learning framework for MHC–peptide binding prediction
 The repository supports direct reproduction of the main experimental results reported in the paper using provided pretrained model weights.
-
 #############################################
+
 2. Repository Structure
+   
 CMSH/
+
 ├── data/
+
 │   ├── mhc/                # Original structure datasets
+
 │   └── HLA_all.txt          # Original sequence datasets
+
 │
 ├── models/
 │   ├── esm_lora_cmsh.py                # Full CMHS model definition
@@ -25,18 +30,18 @@ CMSH/
 │
 ├── README.md
 #############################################
-3. Environment Setup
+4. Environment Setup
 3.1 Requirements
 Python ≥ 3.8;
 PyTorch ≥ 1.12;
 CUDA 
 #############################################
-4. Data Preparation
+5. Data Preparation
 4.1 Dataset
 The structure data calculated by ESM3:
 python ESM3/esm3_mhc.py
 #############################################
-5. Running Experiments
+6. Running Experiments
 5.1 Training from Scratch
 python scripts/main_g.py \
 This will:
